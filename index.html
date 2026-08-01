@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Pathetique — Music Player</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        },
+      },
+    };
+  </script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body {
+      background: #0a0a0a;
+      font-family: 'Inter', system-ui, sans-serif;
+      overscroll-behavior: none;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+    @keyframes eq { 0% { transform: scaleY(0.3); } 100% { transform: scaleY(1); } }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes pulse-ring {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }
+      50% { box-shadow: 0 0 0 4px rgba(16,185,129,0); }
+    }
+
+    .screen { transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+    .screen-hidden-down { transform: translateY(100%); opacity: 0; pointer-events: none; }
+    .screen-hidden-up { transform: translateY(-30px); opacity: 0; pointer-events: none; }
+    .screen-active { transform: translateY(0); opacity: 1; }
+
+    .eq-bar { transform-origin: bottom; animation: eq 0.8s ease-in-out infinite alternate; }
+    .spin-disc { animation: spin 8s linear infinite; }
+
+    .progress-bar { cursor: pointer; }
+    .progress-bar:hover .progress-thumb { opacity: 1; }
+    .progress-thumb { opacity: 0; transition: opacity 0.15s; }
+
+    .track-row:hover .track-num { opacity: 0; }
+    .track-row:hover .track-play { opacity: 1; }
+    .track-row .track-play { opacity: 0; }
+
+    .dragging { opacity: 0.4; }
+    .drag-over { background: rgba(16,185,129,0.1) !important; box-shadow: inset 0 0 0 1px rgba(16,185,129,0.3); }
+
+    /* Cover swipe — GPU-friendly */
+    .cover-viewport {
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      touch-action: pan-y;
+      cursor: grab;
+    }
+    .cover-viewport.is-dragging { cursor: grabbing; }
+    .cover-track {
+      display: flex;
+      height: 100%;
+      width: 300%;
+      transform: translate3d(-33.333333%, 0, 0);
+      will-change: transform;
+      backface-visibility: hidden;
+    }
+    .cover-slide {
+      flex: 0 0 33.333333%;
+      width: 33.333333%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 0.5rem;
+      box-sizing: border-box;
+    }
+    .cover-slide-inner {
+      height: 100%;
+      max-height: 100%;
+      aspect-ratio: 1;
+      max-width: 100%;
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.45);
+      transform: translateZ(0);
+    }
+    .cover-slide-inner img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    .cover-slide.is-side .cover-slide-inner {
+      transform: scale(0.88) translateZ(0);
+      opacity: 0.4;
+    }
+    .cover-slide.is-center .cover-slide-inner.is-playing {
+      animation: pulse-ring 2s ease-in-out infinite;
+    }
+
+    .np-bg {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .np-bg-img {
+      position: absolute;
+      inset: -25%;
+      width: 150%;
+      height: 150%;
+      object-fit: cover;
+      filter: blur(64px) saturate(1.4) brightness(0.65);
+      transform: scale(1.15);
+      opacity: 0.55;
+    }
+    .np-bg-vignette {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 55% at 50% 38%, transparent 0%, rgba(10,10,10,0.3) 65%, rgba(10,10,10,0.8) 100%),
+        linear-gradient(to bottom, rgba(10,10,10,0.3) 0%, transparent 28%, rgba(10,10,10,0.5) 70%, rgba(10,10,10,0.92) 100%);
+    }
+
+    #app {
+      height: 100dvh;
+      max-height: 100dvh;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    @media (min-width: 640px) {
+      #app {
+        height: min(860px, 90dvh);
+        max-height: 90dvh;
+      }
+    }
+  </style>
+</head>
+<body class="bg-neutral-950 text-white antialiased">
+  <div class="flex min-h-dvh items-center justify-center p-0 sm:p-6">
+    <div id="app" class="relative w-full max-w-md overflow-hidden bg-neutral-900 shadow-2xl sm:rounded-3xl sm:ring-1 sm:ring-white/10">
+    </div>
+  </div>
+  <audio id="audio" preload="metadata"></audio>
+
+<script>
+const TRACKS = [
+  { id:"get-lost", title:"Get Lost", artist:"Pathetique", album:"Pathetique", cover:"Get Lost.png", src:"Get Lost.mp3", duration:257 },
+  { id:"second-opinion", title:"Second Opinion", artist:"Pathetique", album:"Pathetique", cover:"Second Opinion.jpg", src:"Second Opinion.mp3", duration:305 },
+  { id:"savage-control", title:"Savage Control", artist:"Pathetique", album:"Pathetique", cover:"Savage Control.jpg", src:"Savage Control.mp3", duration:343 },
+  { id:"faith", title:"Faith", artist:"Pathetique", album:"Pathetique", cover:"Faith.jpg", src:"Faith.mp3", duration:398 },
+  { id:"the-other-one", title:"The Other One", artist:"Pathetique", album:"Pathetique", cover:"The Other One.jpg", src:"The Other One.mp3", duration:256 },
+  { id:"cage-of-want", title:"Cage Of Want", artist:"Pathetique", album:"Pathetique", cover:"Cage Of Want.jpg", src:"Cage Of Want.mp3", duration:244 },
+  { id:"get-lost-nu-house", title:"Get Lost [Nu-House Mix]", artist:"Pathetique", album:"Pathetique", cover:"Get Lost [Nu-House Mix].png", src:"Get Lost [Nu-House Mix].mp3", duration:336 },
+  { id:"flip-the-script", title:"Flip The Script", artist:"Pathetique", album:"Pathetique", cover:"Flip The Script.jpg", src:"Flip The Script.mp3", duration:295 },
+  { id:"change-the-narrative", title:"Change The Narrative", artist:"Pathetique", album:"Pathetique", cover:"Change The Narrative.jpg", src:"Change The Narrative.mp3", duration:249 },
+];
+
+const state = {
+  queue: TRACKS.map(t => ({ ...t })),
+  originalQueue: TRACKS.map(t => ({ ...t })),
+  currentIndex: 0,
+  isPlaying: false,
+  position: 0,
+  duration: 0,
+  shuffle: false,
+  repeat: "off",
+  volume: 0.8,
+  muted: false,
+  screen: "library",
+  liked: new Set(),
+  query: "",
+  dragIndex: null,
+  dragOverIndex: null,
+  coverAnimating: false,
+};
+
+const audio = document.getElementById("audio");
+audio.volume = state.volume;
+
+const SLIDE_MS = 300;
+const imageCache = new Map(); // url -> HTMLImageElement (decoded)
+
+function fmt(s) {
+  if (!isFinite(s) || s < 0) return "0:00";
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ":" + String(sec).padStart(2, "0");
+}
+
+function currentTrack() { return state.queue[state.currentIndex] || null; }
+function $(id) { return document.getElementById(id); }
+
+function preloadCover(url) {
+  if (!url || imageCache.has(url)) return imageCache.get(url);
+  const img = new Image();
+  img.decoding = "async";
+  img.src = url;
+  imageCache.set(url, img);
+  return img;
+}
+
+function preloadAround(index) {
+  const q = state.queue;
+  for (let i = Math.max(0, index - 1); i <= Math.min(q.length - 1, index + 1); i++) {
+    preloadCover(q[i].cover);
+  }
+}
+
+// Warm the full album art set once so swipes never wait on decode
+TRACKS.forEach(t => preloadCover(t.cover));
+
+function syncTrackFields(id, fields) {
+  const apply = (arr) => {
+    const t = arr.find(x => x.id === id);
+    if (t) Object.assign(t, fields);
+  };
+  apply(TRACKS);
+  apply(state.queue);
+  apply(state.originalQueue);
+}
+
+/**
+ * Switch audio + state. When on Now Playing, skips full re-render
+ * and patches the live DOM so the swipe stays smooth.
+ */
+function loadTrack(idx, autoplay, opts = {}) {
+  const { skipRender = false } = opts;
+  const t = state.queue[idx];
+  if (!t) return;
+
+  state.currentIndex = idx;
+  state.position = 0;
+  state.duration = t.duration || 0;
+  preloadAround(idx);
+
+  audio.src = t.src;
+  audio.load();
+
+  const afterAudio = () => {
+    if (skipRender && state.screen === "nowPlaying") {
+      patchNowPlayingDOM();
+      // Keep mini-player in sync if visible under other screens — only NP here
+    } else {
+      render();
+    }
+  };
+
+  if (autoplay) {
+    audio.play()
+      .then(() => { state.isPlaying = true; afterAudio(); })
+      .catch(() => { state.isPlaying = false; afterAudio(); });
+  } else {
+    state.isPlaying = false;
+    afterAudio();
+  }
+}
+
+/** Update Now Playing UI without destroying the cover track DOM. */
+function patchNowPlayingDOM() {
+  const ct = currentTrack();
+  if (!ct) return;
+  const prev = state.queue[state.currentIndex - 1] || null;
+  const next = state.queue[state.currentIndex + 1] || null;
+
+  const track = $("cover-track");
+  if (track) {
+    // Reset position with NO transition so the already-slid panel becomes the new center
+    track.style.transition = "none";
+    track.style.transform = "translate3d(-33.333333%, 0, 0)";
+
+    const slides = track.querySelectorAll(".cover-slide");
+    if (slides.length === 3) {
+      setSlide(slides[0], prev, false);
+      setSlide(slides[1], ct, true);
+      setSlide(slides[2], next, false);
+    }
+    // Force reflow so the next swipe starts from a clean baseline
+    void track.offsetWidth;
+  }
+
+  const title = $("np-title");
+  if (title) title.textContent = ct.title;
+  const artist = $("np-artist");
+  if (artist) artist.textContent = ct.artist;
+
+  const bg = $("np-bg-img");
+  if (bg && bg.getAttribute("src") !== ct.cover) {
+    bg.src = ct.cover;
+  }
+
+  const durEl = $("np-duration");
+  if (durEl) durEl.textContent = fmt(state.duration);
+  const posEl = $("np-position");
+  if (posEl) posEl.textContent = fmt(0);
+  const fill = $("np-fill");
+  if (fill) fill.style.width = "0%";
+  const thumb = $("np-thumb");
+  if (thumb) thumb.style.left = "0%";
+
+  // Play button icon
+  updatePlayIcons();
+}
+
+function setSlide(slideEl, track, isCenter) {
+  slideEl.className = "cover-slide " + (isCenter ? "is-center" : "is-side");
+  const btn = slideEl.querySelector("button");
+  const img = slideEl.querySelector("img");
+  if (!btn || !img) return;
+
+  if (!track) {
+    btn.style.visibility = "hidden";
+    btn.removeAttribute("data-action");
+    btn.removeAttribute("data-index");
+    return;
+  }
+
+  btn.style.visibility = "";
+  img.src = track.cover;
+  img.alt = track.title;
+
+  if (isCenter) {
+    btn.setAttribute("data-action", "toggle-play");
+    btn.removeAttribute("data-index");
+    btn.className = "cover-slide-inner ring-1 ring-white/10" + (state.isPlaying ? " is-playing" : "");
+  } else {
+    const idx = state.queue.findIndex(t => t.id === track.id);
+    btn.setAttribute("data-action", "play-index");
+    btn.setAttribute("data-index", String(idx));
+    btn.className = "cover-slide-inner ring-1 ring-white/10";
+  }
+}
+
+function updatePlayIcons() {
+  // Only refresh icons that depend on isPlaying without full lucide rebuild of the whole app
+  document.querySelectorAll("[data-play-icon]").forEach(el => {
+    el.setAttribute("data-lucide", state.isPlaying ? "pause" : "play");
+  });
+  if (window.lucide) lucide.createIcons();
+}
+
+function togglePlay() {
+  if (!audio.src) { loadTrack(state.currentIndex, true); return; }
+  if (audio.paused) {
+    audio.play().then(() => {
+      state.isPlaying = true;
+      if (state.screen === "nowPlaying") {
+        const inner = document.querySelector(".cover-slide.is-center .cover-slide-inner");
+        if (inner) inner.classList.add("is-playing");
+        updatePlayIcons();
+        // Mini player may not be on this screen
+      } else {
+        render();
+      }
+    }).catch(() => { state.isPlaying = false; });
+  } else {
+    audio.pause();
+    state.isPlaying = false;
+    if (state.screen === "nowPlaying") {
+      const inner = document.querySelector(".cover-slide.is-center .cover-slide-inner");
+      if (inner) inner.classList.remove("is-playing");
+      updatePlayIcons();
+    } else {
+      render();
+    }
+  }
+}
+
+function playTrack(id) {
+  const idx = state.queue.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  if (idx === state.currentIndex && audio.src) { togglePlay(); return; }
+  loadTrack(idx, true);
+}
+
+function playIndex(idx) {
+  if (idx < 0 || idx >= state.queue.length) return;
+  if (idx === state.currentIndex) { togglePlay(); return; }
+  loadTrack(idx, true);
+}
+
+/**
+ * Animate the track, THEN patch state/DOM in place (no full re-render).
+ * This is what removes the lag.
+ */
+function swipeCover(direction, targetIndex, autoplay) {
+  if (state.coverAnimating) return;
+  if (targetIndex < 0 || targetIndex >= state.queue.length) return;
+
+  if (state.screen !== "nowPlaying") {
+    loadTrack(targetIndex, autoplay);
+    return;
+  }
+
+  const track = $("cover-track");
+  const viewport = $("cover-viewport");
+  if (!track || !viewport) {
+    loadTrack(targetIndex, autoplay);
+    return;
+  }
+
+  // Ensure destination art is already decoded
+  preloadCover(state.queue[targetIndex].cover);
+  preloadAround(targetIndex);
+
+  state.coverAnimating = true;
+  const p = viewport.clientWidth;
+  const from = -p;
+  const to = direction < 0 ? -p * 2 : 0;
+
+  track.style.transition = "none";
+  track.style.transform = `translate3d(${from}px, 0, 0)`;
+  void track.offsetWidth;
+  track.style.transition = `transform ${SLIDE_MS}ms ease-out`;
+  track.style.transform = `translate3d(${to}px, 0, 0)`;
+
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    track.removeEventListener("transitionend", onEnd);
+    state.coverAnimating = false;
+    // Critical: skipRender so we don't nuke the DOM mid-swipe
+    loadTrack(targetIndex, autoplay, { skipRender: true });
+  };
+  const onEnd = (e) => {
+    if (e.target !== track || e.propertyName !== "transform") return;
+    finish();
+  };
+  track.addEventListener("transitionend", onEnd);
+  setTimeout(finish, SLIDE_MS + 40);
+}
+
+function nextTrack() {
+  if (state.repeat === "one") {
+    audio.currentTime = 0;
+    audio.play().then(() => { state.isPlaying = true; }).catch(() => {});
+    return;
+  }
+  const ni = state.currentIndex + 1;
+  if (ni < state.queue.length) {
+    swipeCover(-1, ni, true);
+  } else if (state.repeat === "all") {
+    loadTrack(0, true);
+  } else {
+    state.isPlaying = false;
+    state.position = 0;
+    audio.pause();
+    if (state.screen === "nowPlaying") patchNowPlayingDOM();
+    else render();
+  }
+}
+
+function prevTrack() {
+  if (audio.currentTime > 3) {
+    audio.currentTime = 0; state.position = 0; renderProgressOnly(); return;
+  }
+  const pi = state.currentIndex - 1;
+  if (pi >= 0) {
+    swipeCover(1, pi, true);
+  } else if (state.repeat === "all") {
+    loadTrack(state.queue.length - 1, true);
+  } else {
+    audio.currentTime = 0; state.position = 0;
+    if (state.screen === "nowPlaying") patchNowPlayingDOM();
+    else render();
+  }
+}
+
+function seek(time) {
+  const max = state.duration || audio.duration || 0;
+  const t = Math.max(0, Math.min(max, time));
+  audio.currentTime = t; state.position = t; renderProgressOnly();
+}
+
+function toggleShuffle() {
+  state.shuffle = !state.shuffle;
+  if (state.shuffle) {
+    state.originalQueue = state.queue.map(t => ({ ...t }));
+    const cur = state.queue[state.currentIndex];
+    const others = state.queue.filter((_, i) => i !== state.currentIndex);
+    for (let i = others.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [others[i], others[j]] = [others[j], others[i]];
+    }
+    state.queue = [cur, ...others];
+    state.currentIndex = 0;
+  } else {
+    const cur = state.queue[state.currentIndex];
+    state.queue = state.originalQueue.map(t => ({ ...t }));
+    const idx = state.queue.findIndex(t => t.id === cur.id);
+    state.currentIndex = idx === -1 ? 0 : idx;
+  }
+  render();
+}
+
+function cycleRepeat() {
+  state.repeat = state.repeat === "off" ? "all" : state.repeat === "all" ? "one" : "off";
+  render();
+}
+
+function removeFromQueue(id) {
+  const idx = state.queue.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  state.queue = state.queue.filter(t => t.id !== id);
+  if (idx < state.currentIndex) state.currentIndex--;
+  else if (idx === state.currentIndex && state.currentIndex >= state.queue.length) {
+    state.currentIndex = Math.max(0, state.queue.length - 1);
+  }
+  render();
+}
+
+function moveInQueue(from, to) {
+  if (from < 0 || from >= state.queue.length || to < 0 || to >= state.queue.length) return;
+  const cur = state.queue[state.currentIndex];
+  const copy = [...state.queue];
+  const [m] = copy.splice(from, 1);
+  copy.splice(to, 0, m);
+  state.queue = copy;
+  const ni = copy.findIndex(t => t.id === cur.id);
+  if (ni !== -1) state.currentIndex = ni;
+  render();
+}
+
+function toggleLike(id) {
+  if (state.liked.has(id)) state.liked.delete(id);
+  else state.liked.add(id);
+  render();
+}
+
+function setScreen(s) { state.screen = s; render(); }
+
+function navigateToNowPlaying(trackId) {
+  if (trackId && trackId !== (currentTrack() && currentTrack().id)) playTrack(trackId);
+  else if (!state.isPlaying) togglePlay();
+  state.screen = "nowPlaying";
+  render();
+}
+
+audio.addEventListener("timeupdate", () => { state.position = audio.currentTime || 0; renderProgressOnly(); });
+audio.addEventListener("loadedmetadata", () => {
+  const d = audio.duration;
+  if (isFinite(d) && d > 0) {
+    const t = state.queue[state.currentIndex];
+    if (t && !(t.duration > 0)) {
+      state.duration = d;
+      syncTrackFields(t.id, { duration: d });
+    } else if (t && t.duration > 0) {
+      state.duration = t.duration;
+    }
+    const durEl = $("np-duration");
+    if (durEl) durEl.textContent = fmt(state.duration);
+  }
+});
+audio.addEventListener("ended", () => { nextTrack(); });
+audio.addEventListener("play", () => { state.isPlaying = true; });
+audio.addEventListener("pause", () => { state.isPlaying = false; });
+
+function render() {
+  const app = $("app");
+  app.innerHTML = `<div class="relative h-full w-full">${renderLibrary()}${renderNowPlaying()}${renderQueue()}</div>`;
+  if (window.lucide) lucide.createIcons();
+  attachEvents();
+  attachCoverSwipe();
+  preloadAround(state.currentIndex);
+}
+
+function renderProgressOnly() {
+  const pct = state.duration ? Math.min(100, (state.position / state.duration) * 100) : 0;
+  const posEl = $("np-position"); if (posEl) posEl.textContent = fmt(state.position);
+  const fillEl = $("np-fill"); if (fillEl) fillEl.style.width = pct + "%";
+  const thumbEl = $("np-thumb"); if (thumbEl) thumbEl.style.left = pct + "%";
+  const mpPos = $("mp-position"); if (mpPos) mpPos.textContent = fmt(state.position);
+  const mpFill = $("mp-fill"); if (mpFill) mpFill.style.width = pct + "%";
+  const mpThumb = $("mp-thumb"); if (mpThumb) mpThumb.style.left = pct + "%";
+}
+
+function screenClass(name) {
+  const order = { library: 1, nowPlaying: 2, queue: 3 };
+  const cur = order[state.screen];
+  const target = order[name];
+  if (state.screen === name) return "screen screen-active z-30";
+  if (target < cur) return "screen screen-hidden-up z-10";
+  return "screen screen-hidden-down z-10";
+}
+
+function renderLibrary() {
+  const q = state.query.trim().toLowerCase();
+  const source = state.originalQueue.length ? state.originalQueue : TRACKS;
+  const filtered = !q ? source : source.filter(t =>
+    t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q) || (t.album || "").toLowerCase().includes(q));
+  const totalDur = source.reduce((s, t) => s + (t.duration || 0), 0);
+  const ct = currentTrack();
+
+  const rows = filtered.map((t, idx) => {
+    const isCur = ct && ct.id === t.id;
+    const isCurPlaying = isCur && state.isPlaying;
+    return `
+      <button data-action="play-track" data-id="${t.id}" class="track-row group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/5 active:bg-white/10">
+        <div class="relative flex h-6 w-6 shrink-0 items-center justify-center">
+          ${isCurPlaying ? `
+            <div class="flex items-end gap-0.5" style="height:16px">
+              <span class="eq-bar w-0.5 rounded-full bg-emerald-400" style="height:60%"></span>
+              <span class="eq-bar w-0.5 rounded-full bg-emerald-400" style="height:100%;animation-delay:0.1s"></span>
+              <span class="eq-bar w-0.5 rounded-full bg-emerald-400" style="height:40%;animation-delay:0.2s"></span>
+              <span class="eq-bar w-0.5 rounded-full bg-emerald-400" style="height:80%;animation-delay:0.15s"></span>
+            </div>` : `
+            <span class="track-num text-sm tabular-nums text-white/40 ${isCur ? 'opacity-0' : ''}">${idx + 1}</span>
+            <i data-lucide="play" class="track-play absolute h-4 w-4 text-white ${isCur ? '!opacity-100' : ''}" data-fill="currentColor"></i>`}
+        </div>
+        <div class="flex min-w-0 flex-1 items-center gap-3">
+          <div class="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-white/5">
+            <img src="${t.cover}" alt="${t.title}" class="h-full w-full object-cover" loading="lazy" />
+          </div>
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium ${isCur ? 'text-emerald-400' : 'text-white'}">${t.title}</p>
+            <p class="truncate text-xs text-white/50">${t.artist}</p>
+          </div>
+        </div>
+        <span class="hidden w-28 shrink-0 truncate text-sm text-white/50 sm:block">${t.album || ""}</span>
+        <span class="w-12 shrink-0 text-right text-sm tabular-nums text-white/40">${fmt(t.duration)}</span>
+      </button>`;
+  }).join("");
+
+  return `
+    <div class="${screenClass('library')} absolute inset-0 flex h-full flex-col">
+      <header class="shrink-0 px-5 pt-5 pb-3">
+        <p class="text-xs font-medium uppercase tracking-[0.2em] text-white/40">Cinematheque</p>
+        <h1 class="mt-1 text-3xl font-bold tracking-tight text-white">Pathetique</h1>
+        <div class="mt-4 flex flex-wrap items-center gap-3 text-sm text-white/50">
+          <span class="font-medium text-white/80">Editors' Choice</span>
+          <span class="h-1 w-1 rounded-full bg-white/30"></span>
+          <span>${source.length} songs</span>
+          <span class="h-1 w-1 rounded-full bg-white/30"></span>
+          <span>${fmt(totalDur)}</span>
+        </div>
+        <div class="relative mt-4">
+          <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30"></i>
+          <input type="text" data-action="search" value="${state.query.replace(/"/g, '&quot;')}" placeholder="Search songs, artists..."
+            class="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-4 text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-white/20 focus:bg-white/10" />
+        </div>
+      </header>
+      <div class="flex items-center gap-3 px-5 pb-2 text-[11px] font-medium uppercase tracking-wider text-white/30">
+        <span class="w-6 text-center">#</span><span class="flex-1">Title</span>
+        <span class="hidden w-28 sm:block">Album</span>
+        <i data-lucide="clock" class="h-3.5 w-3.5"></i>
+      </div>
+      <div class="flex-1 overflow-y-auto px-2 pb-28">
+        ${rows || `<div class="flex flex-col items-center justify-center py-16 text-white/40"><i data-lucide="search" class="mb-3 h-8 w-8"></i><p class="text-sm">No results</p></div>`}
+      </div>
+      ${renderMiniPlayer()}
+    </div>`;
+}
+
+function coverSlideHTML(track, role) {
+  if (!track) {
+    return `<div class="cover-slide is-side"><button class="cover-slide-inner" style="visibility:hidden" type="button"><img alt="" /></button></div>`;
+  }
+  const isCenter = role === "center";
+  const playingClass = isCenter && state.isPlaying ? " is-playing" : "";
+  const sideClass = isCenter ? "is-center" : "is-side";
+  const idx = state.queue.findIndex(t => t.id === track.id);
+  const action = isCenter
+    ? `data-action="toggle-play"`
+    : `data-action="play-index" data-index="${idx}"`;
+  return `
+    <div class="cover-slide ${sideClass}">
+      <button type="button" ${action} class="cover-slide-inner ring-1 ring-white/10${playingClass}">
+        <img src="${track.cover}" alt="${track.title}" draggable="false" />
+      </button>
+    </div>`;
+}
+
+function renderNowPlaying() {
+  const ct = currentTrack();
+  if (!ct) return `<div class="${screenClass('nowPlaying')} absolute inset-0"></div>`;
+  const prev = state.queue[state.currentIndex - 1] || null;
+  const next = state.queue[state.currentIndex + 1] || null;
+  const pct = state.duration ? Math.min(100, (state.position / state.duration) * 100) : 0;
+
+  return `
+    <div class="${screenClass('nowPlaying')} absolute inset-0">
+      <div class="np-bg">
+        <img id="np-bg-img" class="np-bg-img" src="${ct.cover}" alt="" />
+        <div class="np-bg-vignette"></div>
+      </div>
+      <div class="relative z-10 flex h-full flex-col overflow-hidden">
+        <header class="flex shrink-0 items-center justify-between px-5 pt-5 pb-2">
+          <button data-action="set-screen" data-screen="library" class="flex h-9 w-9 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">
+            <i data-lucide="chevron-down" class="h-6 w-6"></i>
+          </button>
+          <p class="text-xs font-medium uppercase tracking-[0.2em] text-white/50">Now Playing</p>
+          <button data-action="set-screen" data-screen="queue" class="flex h-9 w-9 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white">
+            <i data-lucide="list-music" class="h-5 w-5"></i>
+          </button>
+        </header>
+
+        <div class="flex flex-1 flex-col min-h-0 overflow-hidden">
+          <div class="flex flex-1 min-h-0 items-center justify-center py-3 px-2">
+            <div class="cover-viewport" id="cover-viewport">
+              <div class="cover-track" id="cover-track">
+                ${coverSlideHTML(prev, "side")}
+                ${coverSlideHTML(ct, "center")}
+                ${coverSlideHTML(next, "side")}
+              </div>
+            </div>
+          </div>
+          <div class="shrink-0 text-center px-5 pb-3 pt-1">
+            <h2 id="np-title" class="text-xl sm:text-2xl font-bold tracking-tight text-white truncate">${ct.title}</h2>
+            <p id="np-artist" class="mt-1 text-base text-white/60 truncate">${ct.artist}</p>
+          </div>
+        </div>
+
+        <div class="shrink-0 px-6 pb-8">
+          <div class="mx-auto max-w-sm">
+            <div class="mb-2">
+              <div class="progress-bar group relative h-1.5 w-full rounded-full bg-white/15" data-action="seek-bar">
+                <div id="np-fill" class="absolute left-0 top-0 h-full rounded-full bg-white" style="width:${pct}%"></div>
+                <div id="np-thumb" class="progress-thumb absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md" style="left:${pct}%"></div>
+              </div>
+              <div class="mt-1.5 flex justify-between text-xs tabular-nums text-white/50">
+                <span id="np-position">${fmt(state.position)}</span>
+                <span id="np-duration">${fmt(state.duration)}</span>
+              </div>
+            </div>
+            <div class="mt-4 flex items-center justify-center gap-5 sm:gap-6">
+              <button data-action="toggle-shuffle" class="${state.shuffle ? 'text-emerald-400' : 'text-white/50 hover:text-white'}"><i data-lucide="shuffle" class="h-5 w-5"></i></button>
+              <button data-action="prev-track" class="text-white/80 hover:text-white"><i data-lucide="skip-back" class="h-7 w-7" data-fill="currentColor"></i></button>
+              <button data-action="toggle-play" class="flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-white text-neutral-900 shadow-lg active:scale-90">
+                <i data-play-icon data-lucide="${state.isPlaying ? 'pause' : 'play'}" class="${state.isPlaying ? 'h-7 w-7' : 'ml-1 h-7 w-7'}" data-fill="currentColor"></i>
+              </button>
+              <button data-action="next-track" class="text-white/80 hover:text-white"><i data-lucide="skip-forward" class="h-7 w-7" data-fill="currentColor"></i></button>
+              <button data-action="cycle-repeat" class="${state.repeat !== 'off' ? 'text-emerald-400' : 'text-white/50 hover:text-white'}">
+                <i data-lucide="${state.repeat === 'one' ? 'repeat-1' : 'repeat'}" class="h-5 w-5"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderQueue() {
+  const ct = currentTrack();
+  const upcoming = state.queue.slice(state.currentIndex + 1);
+  const rows = upcoming.map((t, idx) => {
+    const qi = state.currentIndex + 1 + idx;
+    const isDragOver = state.dragOverIndex === qi && state.dragIndex !== qi;
+    return `
+      <div draggable="true" data-action="queue-row" data-index="${qi}"
+        class="group flex items-center gap-3 rounded-lg p-2.5 ${isDragOver ? 'drag-over' : 'hover:bg-white/5'} ${state.dragIndex === qi ? 'dragging' : ''}">
+        <i data-lucide="grip-vertical" class="h-4 w-4 shrink-0 cursor-grab text-white/20 group-hover:text-white/40"></i>
+        <button data-action="play-index" data-index="${qi}" class="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <div class="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-white/5"><img src="${t.cover}" alt="" class="h-full w-full object-cover" loading="lazy" /></div>
+          <div class="min-w-0"><p class="truncate text-sm font-medium text-white">${t.title}</p><p class="truncate text-xs text-white/50">${t.artist}</p></div>
+        </button>
+        <span class="shrink-0 text-xs tabular-nums text-white/40">${fmt(t.duration)}</span>
+        <button data-action="remove-from-queue" data-id="${t.id}" class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/30 opacity-0 group-hover:opacity-100 hover:bg-white/10 hover:text-white">
+          <i data-lucide="x" class="h-4 w-4"></i>
+        </button>
+      </div>`;
+  }).join("");
+
+  return `
+    <div class="${screenClass('queue')} absolute inset-0 flex h-full flex-col">
+      <header class="flex shrink-0 items-center justify-between px-5 pt-5 pb-3">
+        <button data-action="set-screen" data-screen="nowPlaying" class="flex h-9 w-9 items-center justify-center rounded-full text-white/70 hover:bg-white/10"><i data-lucide="chevron-down" class="h-6 w-6"></i></button>
+        <h1 class="text-base font-semibold text-white">Queue</h1>
+        <div class="w-9"></div>
+      </header>
+      <div class="flex-1 overflow-y-auto px-3 pb-28">
+        ${ct ? `<div class="mb-4"><p class="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-white/40">Now Playing</p>
+          <div class="flex items-center gap-3 rounded-xl bg-white/5 p-2.5">
+            <div class="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-white/5"><img src="${ct.cover}" alt="" class="h-full w-full object-cover" /></div>
+            <div class="min-w-0 flex-1"><p class="truncate text-sm font-medium text-emerald-400">${ct.title}</p><p class="truncate text-xs text-white/50">${ct.artist}</p></div>
+            <button data-action="toggle-play" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-neutral-900 active:scale-90">
+              <i data-play-icon data-lucide="${state.isPlaying ? 'pause' : 'play'}" class="${state.isPlaying ? 'h-4 w-4' : 'ml-0.5 h-4 w-4'}" data-fill="currentColor"></i>
+            </button>
+          </div></div>` : ""}
+        <div>
+          <p class="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-white/40">Next Up</p>
+          ${upcoming.length === 0 ? `<div class="flex flex-col items-center justify-center py-12 text-white/30"><i data-lucide="music-2" class="mb-3 h-8 w-8"></i><p class="text-sm">No upcoming tracks</p></div>` : rows}
+        </div>
+      </div>
+      ${renderMiniPlayer()}
+    </div>`;
+}
+
+function renderMiniPlayer() {
+  const ct = currentTrack();
+  if (!ct) return "";
+  const pct = state.duration ? Math.min(100, (state.position / state.duration) * 100) : 0;
+  return `
+    <div class="absolute bottom-0 left-0 right-0 z-30 px-3" style="padding-bottom:max(0.75rem, env(safe-area-inset-bottom))">
+      <div class="mx-auto max-w-md overflow-hidden rounded-2xl border border-white/10 bg-neutral-900/80 shadow-2xl backdrop-blur-xl">
+        <div class="flex items-center gap-3 p-3">
+          <button data-action="set-screen" data-screen="nowPlaying" class="group flex min-w-0 flex-1 items-center gap-3 text-left">
+            <div class="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-white/5">
+              <img src="${ct.cover}" alt="" class="h-full w-full object-cover ${state.isPlaying ? 'spin-disc' : ''}" style="animation-play-state:${state.isPlaying ? 'running' : 'paused'}" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-medium text-white">${ct.title}</p>
+              <p class="truncate text-xs text-white/50">${ct.artist}</p>
+            </div>
+            <i data-lucide="chevron-up" class="h-5 w-5 shrink-0 text-white/40 group-hover:text-white/70"></i>
+          </button>
+          <button data-action="toggle-play" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-neutral-900 active:scale-90">
+            <i data-play-icon data-lucide="${state.isPlaying ? 'pause' : 'play'}" class="${state.isPlaying ? 'h-5 w-5' : 'ml-0.5 h-5 w-5'}" data-fill="currentColor"></i>
+          </button>
+          <button data-action="next-track" class="flex h-9 w-9 shrink-0 items-center justify-center text-white/70 hover:text-white">
+            <i data-lucide="skip-forward" class="h-5 w-5" data-fill="currentColor"></i>
+          </button>
+          <button data-action="set-screen" data-screen="queue" class="flex h-9 w-9 shrink-0 items-center justify-center text-white/70 hover:text-white">
+            <i data-lucide="list-music" class="h-5 w-5"></i>
+          </button>
+        </div>
+        <div class="flex items-center gap-2 px-3 pb-2.5">
+          <span id="mp-position" class="w-9 shrink-0 text-right text-[10px] tabular-nums text-white/40">${fmt(state.position)}</span>
+          <div class="progress-bar group relative h-1 w-full rounded-full bg-white/15" data-action="seek-bar-mp">
+            <div id="mp-fill" class="absolute left-0 top-0 h-full rounded-full bg-white" style="width:${pct}%"></div>
+            <div id="mp-thumb" class="progress-thumb absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md" style="left:${pct}%"></div>
+          </div>
+          <span class="w-9 shrink-0 text-[10px] tabular-nums text-white/40">${fmt(state.duration)}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function attachCoverSwipe() {
+  const viewport = $("cover-viewport");
+  const track = $("cover-track");
+  if (!viewport || !track || state.coverAnimating) return;
+
+  let startX = 0;
+  let startY = 0;
+  let dragging = false;
+  let axis = null;
+
+  const panel = () => viewport.clientWidth;
+  const centered = () => -panel();
+
+  const setX = (x, animate) => {
+    track.style.transition = animate ? `transform ${SLIDE_MS}ms ease-out` : "none";
+    track.style.transform = `translate3d(${x}px, 0, 0)`;
+  };
+
+  const onStart = (e) => {
+    if (state.coverAnimating) return;
+    const t = e.touches ? e.touches[0] : e;
+    startX = t.clientX;
+    startY = t.clientY;
+    dragging = true;
+    axis = null;
+    viewport.classList.add("is-dragging");
+    setX(centered(), false);
+  };
+
+  const onMove = (e) => {
+    if (!dragging || state.coverAnimating) return;
+    const t = e.touches ? e.touches[0] : e;
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+
+    if (!axis) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+    }
+    if (axis !== "x") return;
+    e.preventDefault();
+
+    const hasPrev = state.currentIndex > 0;
+    const hasNext = state.currentIndex < state.queue.length - 1;
+    let offset = dx;
+    if ((!hasPrev && offset > 0) || (!hasNext && offset < 0)) offset *= 0.35;
+
+    setX(centered() + offset, false);
+  };
+
+  const onEnd = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    viewport.classList.remove("is-dragging");
+    if (axis !== "x") { axis = null; return; }
+    axis = null;
+
+    const t = e.changedTouches ? e.changedTouches[0] : e;
+    const dx = t.clientX - startX;
+    const threshold = panel() * 0.25;
+    const hasPrev = state.currentIndex > 0;
+    const hasNext = state.currentIndex < state.queue.length - 1;
+
+    if (dx < -threshold && hasNext) {
+      nextTrack();
+    } else if (dx > threshold && hasPrev) {
+      prevTrack();
+    } else {
+      setX(centered(), true);
+    }
+  };
+
+  viewport.addEventListener("touchstart", onStart, { passive: true });
+  viewport.addEventListener("touchmove", onMove, { passive: false });
+  viewport.addEventListener("touchend", onEnd);
+  viewport.addEventListener("mousedown", onStart);
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onEnd);
+}
+
+function attachEvents() {
+  document.querySelectorAll("[data-action]").forEach(el => {
+    const action = el.dataset.action;
+    if (action === "search") {
+      el.addEventListener("input", e => { state.query = e.target.value; render(); });
+      return;
+    }
+    if (action === "seek-bar" || action === "seek-bar-mp") {
+      let dragging = false;
+      const handle = (clientX) => {
+        const rect = el.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        seek(ratio * (state.duration || 0));
+      };
+      el.addEventListener("pointerdown", e => { dragging = true; el.setPointerCapture(e.pointerId); handle(e.clientX); });
+      el.addEventListener("pointermove", e => { if (dragging) handle(e.clientX); });
+      el.addEventListener("pointerup", () => { dragging = false; });
+      el.addEventListener("pointercancel", () => { dragging = false; });
+      return;
+    }
+    if (action === "queue-row") {
+      el.addEventListener("dragstart", () => { state.dragIndex = parseInt(el.dataset.index, 10); render(); });
+      el.addEventListener("dragover", e => { e.preventDefault(); state.dragOverIndex = parseInt(el.dataset.index, 10); });
+      el.addEventListener("dragend", () => {
+        if (state.dragIndex !== null && state.dragOverIndex !== null && state.dragIndex !== state.dragOverIndex) {
+          moveInQueue(state.dragIndex, state.dragOverIndex);
+        }
+        state.dragIndex = null; state.dragOverIndex = null; render();
+      });
+      el.addEventListener("drop", e => e.preventDefault());
+      return;
+    }
+    el.addEventListener("click", e => {
+      e.preventDefault();
+      if (state.coverAnimating) return;
+      const id = el.dataset.id;
+      const screen = el.dataset.screen;
+      const index = el.dataset.index !== undefined ? parseInt(el.dataset.index, 10) : null;
+      switch (action) {
+        case "play-track": navigateToNowPlaying(id); break;
+        case "play-index": if (index !== null) playIndex(index); break;
+        case "toggle-play": togglePlay(); break;
+        case "next-track": nextTrack(); break;
+        case "prev-track": prevTrack(); break;
+        case "toggle-shuffle": toggleShuffle(); break;
+        case "cycle-repeat": cycleRepeat(); break;
+        case "toggle-like": if (id) toggleLike(id); break;
+        case "set-screen": if (screen) setScreen(screen); break;
+        case "remove-from-queue": if (id) removeFromQueue(id); break;
+      }
+    });
+  });
+}
+
+render();
+loadTrack(0, false);
+</script>
+</body>
+</html>
