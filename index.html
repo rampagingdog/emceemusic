@@ -19,6 +19,9 @@
     };
   </script>
   <style>
+    /* ============================================
+       Base Styles
+       ============================================ */
     * { -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; }
     body {
@@ -26,11 +29,18 @@
       font-family: 'Inter', system-ui, sans-serif;
       overscroll-behavior: none;
     }
+
+    /* ============================================
+       Scrollbar Styles
+       ============================================ */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 9999px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
+    /* ============================================
+       Animations
+       ============================================ */
     @keyframes eq { 0% { transform: scaleY(0.3); } 100% { transform: scaleY(1); } }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @keyframes pulse-ring {
@@ -38,26 +48,43 @@
       50% { box-shadow: 0 0 0 4px rgba(16,185,129,0); }
     }
 
+    /* ============================================
+       Screen Transitions
+       ============================================ */
     .screen { transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
     .screen-hidden-down { transform: translateY(100%); opacity: 0; pointer-events: none; }
     .screen-hidden-up { transform: translateY(-30px); opacity: 0; pointer-events: none; }
     .screen-active { transform: translateY(0); opacity: 1; }
 
+    /* ============================================
+       Component Animations
+       ============================================ */
     .eq-bar { transform-origin: bottom; animation: eq 0.8s ease-in-out infinite alternate; }
     .spin-disc { animation: spin 8s linear infinite; }
 
+    /* ============================================
+       Progress Bar Interactions
+       ============================================ */
     .progress-bar { cursor: pointer; }
     .progress-bar:hover .progress-thumb { opacity: 1; }
     .progress-thumb { opacity: 0; transition: opacity 0.15s; }
 
+    /* ============================================
+       Track Row Hover States
+       ============================================ */
     .track-row:hover .track-num { opacity: 0; }
     .track-row:hover .track-play { opacity: 1; }
     .track-row .track-play { opacity: 0; }
 
+    /* ============================================
+       Drag and Drop States
+       ============================================ */
     .dragging { opacity: 0.4; }
     .drag-over { background: rgba(16,185,129,0.1) !important; box-shadow: inset 0 0 0 1px rgba(16,185,129,0.3); }
 
-    /* Cover swipe — GPU-friendly */
+    /* ============================================
+       Cover Art Swipe Component
+       ============================================ */
     .cover-viewport {
       overflow: hidden;
       width: 100%;
@@ -112,6 +139,9 @@
       animation: pulse-ring 2s ease-in-out infinite;
     }
 
+    /* ============================================
+       Now Playing Background Effects
+       ============================================ */
     .np-bg {
       position: absolute;
       inset: 0;
@@ -136,6 +166,9 @@
         linear-gradient(to bottom, rgba(10,10,10,0.3) 0%, transparent 28%, rgba(10,10,10,0.5) 70%, rgba(10,10,10,0.92) 100%);
     }
 
+    /* ============================================
+       App Container & Responsive Layout
+       ============================================ */
     #app {
       height: 100dvh;
       max-height: 100dvh;
@@ -157,18 +190,30 @@
   <audio id="audio" preload="metadata"></audio>
 
 <script>
+/**
+ * ============================================
+ * Music Player Application
+ * ============================================
+ */
+
+// ============================================
+// Track Data Configuration
+// ============================================
 const TRACKS = [
-  { id:"get-lost", title:"Get Lost", artist:"Pathetique", album:"Pathetique", cover:"Get Lost.png", src:"Get Lost.mp3", duration:257 },
-  { id:"second-opinion", title:"Second Opinion", artist:"Pathetique", album:"Pathetique", cover:"Second Opinion.jpg", src:"Second Opinion.mp3", duration:305 },
-  { id:"savage-control", title:"Savage Control", artist:"Pathetique", album:"Pathetique", cover:"Savage Control.jpg", src:"Savage Control.mp3", duration:343 },
-  { id:"faith", title:"Faith", artist:"Pathetique", album:"Pathetique", cover:"Faith.jpg", src:"Faith.mp3", duration:398 },
-  { id:"the-other-one", title:"The Other One", artist:"Pathetique", album:"Pathetique", cover:"The Other One.jpg", src:"The Other One.mp3", duration:256 },
-  { id:"cage-of-want", title:"Cage Of Want", artist:"Pathetique", album:"Pathetique", cover:"Cage Of Want.jpg", src:"Cage Of Want.mp3", duration:244 },
-  { id:"get-lost-nu-house", title:"Get Lost [Nu-House Mix]", artist:"Pathetique", album:"Pathetique", cover:"Get Lost [Nu-House Mix].png", src:"Get Lost [Nu-House Mix].mp3", duration:336 },
-  { id:"flip-the-script", title:"Flip The Script", artist:"Pathetique", album:"Pathetique", cover:"Flip The Script.jpg", src:"Flip The Script.mp3", duration:295 },
-  { id:"change-the-narrative", title:"Change The Narrative", artist:"Pathetique", album:"Pathetique", cover:"Change The Narrative.jpg", src:"Change The Narrative.mp3", duration:249 },
+  { id: "get-lost", title: "Get Lost", artist: "Pathetique", album: "Pathetique", cover: "Get Lost.png", src: "Get Lost.mp3", duration: 257 },
+  { id: "second-opinion", title: "Second Opinion", artist: "Pathetique", album: "Pathetique", cover: "Second Opinion.jpg", src: "Second Opinion.mp3", duration: 305 },
+  { id: "savage-control", title: "Savage Control", artist: "Pathetique", album: "Pathetique", cover: "Savage Control.jpg", src: "Savage Control.mp3", duration: 343 },
+  { id: "faith", title: "Faith", artist: "Pathetique", album: "Pathetique", cover: "Faith.jpg", src: "Faith.mp3", duration: 398 },
+  { id: "the-other-one", title: "The Other One", artist: "Pathetique", album: "Pathetique", cover: "The Other One.jpg", src: "The Other One.mp3", duration: 256 },
+  { id: "cage-of-want", title: "Cage Of Want", artist: "Pathetique", album: "Pathetique", cover: "Cage Of Want.jpg", src: "Cage Of Want.mp3", duration: 244 },
+  { id: "get-lost-nu-house", title: "Get Lost [Nu-House Mix]", artist: "Pathetique", album: "Pathetique", cover: "Get Lost [Nu-House Mix].png", src: "Get Lost [Nu-House Mix].mp3", duration: 336 },
+  { id: "flip-the-script", title: "Flip The Script", artist: "Pathetique", album: "Pathetique", cover: "Flip The Script.jpg", src: "Flip The Script.mp3", duration: 295 },
+  { id: "change-the-narrative", title: "Change The Narrative", artist: "Pathetique", album: "Pathetique", cover: "Change The Narrative.jpg", src: "Change The Narrative.mp3", duration: 249 },
 ];
 
+// ============================================
+// Application State
+// ============================================
 const state = {
   queue: TRACKS.map(t => ({ ...t })),
   originalQueue: TRACKS.map(t => ({ ...t })),
@@ -177,10 +222,10 @@ const state = {
   position: 0,
   duration: 0,
   shuffle: false,
-  repeat: "off",
+  repeat: "off", // 'off', 'all', 'one'
   volume: 0.8,
   muted: false,
-  screen: "library",
+  screen: "library", // 'library', 'nowPlaying', 'queue'
   liked: new Set(),
   query: "",
   dragIndex: null,
@@ -188,22 +233,60 @@ const state = {
   coverAnimating: false,
 };
 
-const audio = document.getElementById("audio");
-audio.volume = state.volume;
-
+// ============================================
+// Constants & Configuration
+// ============================================
 const SLIDE_MS = 300;
 const imageCache = new Map(); // url -> HTMLImageElement (decoded)
 
+// ============================================
+// DOM Elements
+// ============================================
+const audio = document.getElementById("audio");
+audio.volume = state.volume;
+
+// ============================================
+// Utility Functions
+// ============================================
+
+/**
+ * Format seconds as mm:ss
+ * @param {number} s - Time in seconds
+ * @returns {string} Formatted time string
+ */
 function fmt(s) {
   if (!isFinite(s) || s < 0) return "0:00";
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
-  return m + ":" + String(sec).padStart(2, "0");
+  return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-function currentTrack() { return state.queue[state.currentIndex] || null; }
-function $(id) { return document.getElementById(id); }
+/**
+ * Get current track from queue
+ * @returns {Object|null} Current track object or null
+ */
+function currentTrack() {
+  return state.queue[state.currentIndex] || null;
+}
 
+/**
+ * Get element by ID
+ * @param {string} id - Element ID
+ * @returns {HTMLElement|null} DOM element or null
+ */
+function $(id) {
+  return document.getElementById(id);
+}
+
+// ============================================
+// Image Preloading System
+// ============================================
+
+/**
+ * Preload a cover image and cache it
+ * @param {string} url - Image URL
+ * @returns {HTMLImageElement|undefined} Cached image element
+ */
 function preloadCover(url) {
   if (!url || imageCache.has(url)) return imageCache.get(url);
   const img = new Image();
@@ -213,6 +296,10 @@ function preloadCover(url) {
   return img;
 }
 
+/**
+ * Preload covers around the current index for smooth swiping
+ * @param {number} index - Current track index
+ */
 function preloadAround(index) {
   const q = state.queue;
   for (let i = Math.max(0, index - 1); i <= Math.min(q.length - 1, index + 1); i++) {
@@ -223,6 +310,15 @@ function preloadAround(index) {
 // Warm the full album art set once so swipes never wait on decode
 TRACKS.forEach(t => preloadCover(t.cover));
 
+// ============================================
+// Track Synchronization
+// ============================================
+
+/**
+ * Sync track metadata across all data structures
+ * @param {string} id - Track ID
+ * @param {Object} fields - Fields to update
+ */
 function syncTrackFields(id, fields) {
   const apply = (arr) => {
     const t = arr.find(x => x.id === id);
@@ -233,9 +329,15 @@ function syncTrackFields(id, fields) {
   apply(state.originalQueue);
 }
 
+// ============================================
+// Audio Playback Control
+// ============================================
+
 /**
- * Switch audio + state. When on Now Playing, skips full re-render
- * and patches the live DOM so the swipe stays smooth.
+ * Load a track into the audio player
+ * @param {number} idx - Track index in queue
+ * @param {boolean} autoplay - Whether to start playing immediately
+ * @param {Object} opts - Options (skipRender: skip full re-render)
  */
 function loadTrack(idx, autoplay, opts = {}) {
   const { skipRender = false } = opts;
@@ -253,7 +355,6 @@ function loadTrack(idx, autoplay, opts = {}) {
   const afterAudio = () => {
     if (skipRender && state.screen === "nowPlaying") {
       patchNowPlayingDOM();
-      // Keep mini-player in sync if visible under other screens — only NP here
     } else {
       render();
     }
@@ -269,7 +370,9 @@ function loadTrack(idx, autoplay, opts = {}) {
   }
 }
 
-/** Update Now Playing UI without destroying the cover track DOM. */
+/**
+ * Update Now Playing UI without destroying the cover track DOM
+ */
 function patchNowPlayingDOM() {
   const ct = currentTrack();
   if (!ct) return;
@@ -311,12 +414,17 @@ function patchNowPlayingDOM() {
   const thumb = $("np-thumb");
   if (thumb) thumb.style.left = "0%";
 
-  // Play button icon
   updatePlayIcons();
 }
 
+/**
+ * Configure a cover slide element
+ * @param {HTMLElement} slideEl - Slide container element
+ * @param {Object|null} track - Track data or null for empty slide
+ * @param {boolean} isCenter - Whether this is the center slide
+ */
 function setSlide(slideEl, track, isCenter) {
-  slideEl.className = "cover-slide " + (isCenter ? "is-center" : "is-side");
+  slideEl.className = `cover-slide ${isCenter ? "is-center" : "is-side"}`;
   const btn = slideEl.querySelector("button");
   const img = slideEl.querySelector("img");
   if (!btn || !img) return;
@@ -335,7 +443,7 @@ function setSlide(slideEl, track, isCenter) {
   if (isCenter) {
     btn.setAttribute("data-action", "toggle-play");
     btn.removeAttribute("data-index");
-    btn.className = "cover-slide-inner ring-1 ring-white/10" + (state.isPlaying ? " is-playing" : "");
+    btn.className = `cover-slide-inner ring-1 ring-white/10${state.isPlaying ? " is-playing" : ""}`;
   } else {
     const idx = state.queue.findIndex(t => t.id === track.id);
     btn.setAttribute("data-action", "play-index");
@@ -344,14 +452,19 @@ function setSlide(slideEl, track, isCenter) {
   }
 }
 
+/**
+ * Update play/pause icons throughout the UI
+ */
 function updatePlayIcons() {
-  // Only refresh icons that depend on isPlaying without full lucide rebuild of the whole app
   document.querySelectorAll("[data-play-icon]").forEach(el => {
     el.setAttribute("data-lucide", state.isPlaying ? "pause" : "play");
   });
   if (window.lucide) lucide.createIcons();
 }
 
+/**
+ * Toggle play/pause state
+ */
 function togglePlay() {
   if (!audio.src) { loadTrack(state.currentIndex, true); return; }
   if (audio.paused) {
@@ -361,7 +474,6 @@ function togglePlay() {
         const inner = document.querySelector(".cover-slide.is-center .cover-slide-inner");
         if (inner) inner.classList.add("is-playing");
         updatePlayIcons();
-        // Mini player may not be on this screen
       } else {
         render();
       }
@@ -379,6 +491,10 @@ function togglePlay() {
   }
 }
 
+/**
+ * Play a specific track by ID
+ * @param {string} id - Track ID
+ */
 function playTrack(id) {
   const idx = state.queue.findIndex(t => t.id === id);
   if (idx === -1) return;
@@ -386,6 +502,10 @@ function playTrack(id) {
   loadTrack(idx, true);
 }
 
+/**
+ * Play a track by index in the queue
+ * @param {number} idx - Queue index
+ */
 function playIndex(idx) {
   if (idx < 0 || idx >= state.queue.length) return;
   if (idx === state.currentIndex) { togglePlay(); return; }
@@ -393,8 +513,16 @@ function playIndex(idx) {
 }
 
 /**
- * Animate the track, THEN patch state/DOM in place (no full re-render).
- * This is what removes the lag.
+ * ============================================
+ * Track Navigation & Playback Control
+ * ============================================
+ */
+
+/**
+ * Animate the cover art swipe, then patch state/DOM in place (no full re-render)
+ * @param {number} direction - Swipe direction (-1 for next, 1 for prev)
+ * @param {number} targetIndex - Target track index
+ * @param {boolean} autoplay - Whether to start playing immediately
  */
 function swipeCover(direction, targetIndex, autoplay) {
   if (state.coverAnimating) return;
@@ -444,6 +572,9 @@ function swipeCover(direction, targetIndex, autoplay) {
   setTimeout(finish, SLIDE_MS + 40);
 }
 
+/**
+ * Play the next track in queue
+ */
 function nextTrack() {
   if (state.repeat === "one") {
     audio.currentTime = 0;
@@ -464,6 +595,9 @@ function nextTrack() {
   }
 }
 
+/**
+ * Play the previous track in queue
+ */
 function prevTrack() {
   if (audio.currentTime > 3) {
     audio.currentTime = 0; state.position = 0; renderProgressOnly(); return;
@@ -480,12 +614,19 @@ function prevTrack() {
   }
 }
 
+/**
+ * Seek to a specific time in the current track
+ * @param {number} time - Time in seconds
+ */
 function seek(time) {
   const max = state.duration || audio.duration || 0;
   const t = Math.max(0, Math.min(max, time));
   audio.currentTime = t; state.position = t; renderProgressOnly();
 }
 
+/**
+ * Toggle shuffle mode
+ */
 function toggleShuffle() {
   state.shuffle = !state.shuffle;
   if (state.shuffle) {
@@ -507,11 +648,18 @@ function toggleShuffle() {
   render();
 }
 
+/**
+ * Cycle through repeat modes: off -> all -> one -> off
+ */
 function cycleRepeat() {
   state.repeat = state.repeat === "off" ? "all" : state.repeat === "all" ? "one" : "off";
   render();
 }
 
+/**
+ * Remove a track from the queue
+ * @param {string} id - Track ID to remove
+ */
 function removeFromQueue(id) {
   const idx = state.queue.findIndex(t => t.id === id);
   if (idx === -1) return;
@@ -523,6 +671,11 @@ function removeFromQueue(id) {
   render();
 }
 
+/**
+ * Move a track within the queue (for drag-and-drop)
+ * @param {number} from - Source index
+ * @param {number} to - Destination index
+ */
 function moveInQueue(from, to) {
   if (from < 0 || from >= state.queue.length || to < 0 || to >= state.queue.length) return;
   const cur = state.queue[state.currentIndex];
@@ -535,14 +688,26 @@ function moveInQueue(from, to) {
   render();
 }
 
+/**
+ * Toggle like status for a track
+ * @param {string} id - Track ID
+ */
 function toggleLike(id) {
   if (state.liked.has(id)) state.liked.delete(id);
   else state.liked.add(id);
   render();
 }
 
+/**
+ * Navigate to a specific screen
+ * @param {string} s - Screen name ('library', 'nowPlaying', 'queue')
+ */
 function setScreen(s) { state.screen = s; render(); }
 
+/**
+ * Navigate to Now Playing screen and optionally play a track
+ * @param {string} trackId - Optional track ID to play
+ */
 function navigateToNowPlaying(trackId) {
   if (trackId && trackId !== (currentTrack() && currentTrack().id)) playTrack(trackId);
   else if (!state.isPlaying) togglePlay();
