@@ -557,6 +557,7 @@ audio.addEventListener("loadedmetadata", () => {
     if (t && !(t.duration > 0)) {
       state.duration = d;
       syncTrackFields(t.id, { duration: d });
+      render(); // Re-render to update library/mini-player with new duration
     } else if (t && t.duration > 0) {
       state.duration = t.duration;
     }
